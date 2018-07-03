@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 import time
 import sys
@@ -40,7 +41,9 @@ class Progbar(object):
                 self.sum_values[k] = [v, 1]
                 self.unique_values.append(k)
             else:
-                self.sum_values[k][0] += v * (current-self.seen_so_far)
+                # self.sum_values[k][0] 记录总值（loss 值）
+                # self.sum_values[k][1] 记录总 steps
+                self.sum_values[k][0] += v * (current-self.seen_so_far) # v 是平均值， v*steps = total value
                 self.sum_values[k][1] += (current-self.seen_so_far)
 
         prev_total_width = self.total_width

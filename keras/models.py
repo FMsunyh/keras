@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import theano
 import theano.tensor as T
 import numpy as np
@@ -84,7 +85,7 @@ class Sequential(object):
             progbar = Progbar(target=len(X))
             for batch_index in range(0, nb_batch):
                 batch_start = batch_index*batch_size
-                batch_end = min(len(X), (batch_index+1)*batch_size)
+                batch_end = min(len(X), (batch_index+1)*batch_size) #防止越界
                 batch_ids = index_array[batch_start:batch_end]
 
                 X_batch = X[batch_ids]
