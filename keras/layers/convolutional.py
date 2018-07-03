@@ -2,6 +2,7 @@
 import theano
 import theano.tensor as T
 from theano.tensor.signal import downsample
+# from theano.tensor.signal.pool import pool_2d
 
 from .. import activations, initializations
 from ..utils.theano_utils import shared_zeros
@@ -53,6 +54,7 @@ class MaxPooling2D(Layer):
     def output(self, train):
         X = self.get_input(train)
         output = downsample.max_pool_2d(X, self.poolsize, ignore_border=self.ignore_border)
+        # output = pool_2d(X, self.poolsize, ignore_border=self.ignore_border)
         return output
 
 
