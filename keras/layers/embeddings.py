@@ -4,6 +4,7 @@ import theano.tensor as T
 
 from .. import activations, initializations
 from ..layers.core import Layer
+from ..constraints import unitnorm
 
 
 class Embedding(Layer):
@@ -14,7 +15,7 @@ class Embedding(Layer):
         @input_dim: size of vocabulary (highest input integer + 1)
         @out_dim: size of dense representation
     '''
-    def __init__(self, input_dim, output_dim, init='uniform', weights=None):
+    def __init__(self, input_dim, output_dim, init='uniform', weights=None, W_regularizer=None, W_constraint=None):
         super(Embedding,self).__init__()
         self.init = initializations.get(init)
         self.input_dim = input_dim
@@ -23,11 +24,13 @@ class Embedding(Layer):
         self.input = T.imatrix()
         self.W = self.init((self.input_dim, self.output_dim))
         self.params = [self.W]
+        self.constraints = [W_constraint]
+        self.regularizers = [W_regularizer]
 
         if weights is not None:
             self.set_weights(weights)
 
-    def output(self, train=False):
+    def get_output(self, train=False):
         X = self.get_input(train)
         out = self.W[X]
         return out
@@ -83,7 +86,7 @@ class WordContextProduct(Layer):
             self.set_weights(weights)
 
 
-    def output(self, train=False):
+    def get_output(self, train=False):
         X = self.get_input(train)
         w = self.W_w[X[:, 0]] # nb_samples, proj_dim
         c = self.W_c[X[:, 1]] # nb_samples, proj_dim

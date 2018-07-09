@@ -12,5 +12,11 @@ def maxnorm(m=2):
     return maxnorm_wrap
 
 def nonneg(p):
-    p *= T.ge(p,0)
+    p *= T.ge(p, 0)
     return p
+
+def identity(g):
+    return g
+
+def unitnorm(e):
+    return e / T.sqrt(T.sum(e**2, axis=-1, keepdims=True))

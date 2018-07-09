@@ -46,7 +46,7 @@ class SimpleRNN(Layer):
         '''
         return self.activation(x_t + T.dot(h_tm1, u))
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train) # shape: (nb_samples, time (padded with zeros at the end), input_dim)
         # new shape: (time, nb_samples, input_dim) -> because theano.scan iterates over main dimension
         X = X.dimshuffle((1,0,2)) 
@@ -60,7 +60,7 @@ class SimpleRNN(Layer):
             self._step, # this will be called with arguments (sequences[i], outputs[i-1], non_sequences[i])
             sequences=x, # tensors to iterate over, inputs to _step
             # initialization of the output. Input to _step with default tap=-1.
-            outputs_info=alloc_zeros_matrix(X.shape[1], self.output_dim), 
+            outputs_info=T.unbroadcast(alloc_zeros_matrix(X.shape[1], self.output_dim), 1),
             non_sequences=self.U, # static inputs to _step
             truncate_gradient=self.truncate_gradient
         )
@@ -106,7 +106,7 @@ class SimpleDeepRNN(Layer):
         self.input = T.tensor3()
 
         self.W = self.init((self.input_dim, self.output_dim))
-        self.Us = [self.init((self.output_dim, self.output_dim)) for _ in range(self.depth)]
+        self.Us = [self.inner_init((self.output_dim, self.output_dim)) for _ in range(self.depth)]
         self.b = shared_zeros((self.output_dim))
         self.params = [self.W] + self.Us + [self.b]
 
@@ -119,7 +119,7 @@ class SimpleDeepRNN(Layer):
             o += self.inner_activation(T.dot(args[i], args[i+self.depth]))
         return self.activation(o)
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         X = X.dimshuffle((1,0,2)) 
 
@@ -129,7 +129,7 @@ class SimpleDeepRNN(Layer):
             self._step,
             sequences=x,
             outputs_info=[dict(
-                initial=T.alloc(np.cast[theano.config.floatX](0.), self.depth, X.shape[1], self.output_dim), 
+                initial=T.alloc(np.cast[theano.config.floatX](0.), self.depth, X.shape[1], self.output_dim),
                 taps = [(-i-1) for i in range(self.depth)]
             )],
             non_sequences=self.Us,
@@ -147,6 +147,7 @@ class SimpleDeepRNN(Layer):
             "init":self.init.__name__,
             "inner_init":self.inner_init.__name__,
             "activation":self.activation.__name__,
+            "inner_activation":self.inner_activation.__name__,
             "truncate_gradient":self.truncate_gradient,
             "return_sequences":self.return_sequences}
 
@@ -222,7 +223,7 @@ class GRU(Layer):
         h_t = z * h_tm1 + (1 - z) * hh_t
         return h_t
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train) 
         X = X.dimshuffle((1,0,2)) 
 
@@ -232,7 +233,7 @@ class GRU(Layer):
         outputs, updates = theano.scan(
             self._step, 
             sequences=[x_z, x_r, x_h], 
-            outputs_info=alloc_zeros_matrix(X.shape[1], self.output_dim),
+            outputs_info=T.unbroadcast(alloc_zeros_matrix(X.shape[1], self.output_dim), 1),
             non_sequences=[self.U_z, self.U_r, self.U_h],
             truncate_gradient=self.truncate_gradient
         )
@@ -247,6 +248,7 @@ class GRU(Layer):
             "init":self.init.__name__,
             "inner_init":self.inner_init.__name__,
             "activation":self.activation.__name__,
+            "inner_activation":self.inner_activation.__name__,
             "truncate_gradient":self.truncate_gradient,
             "return_sequences":self.return_sequences}
 
@@ -331,7 +333,7 @@ class LSTM(Layer):
         h_t = o_t * self.activation(c_t)
         return h_t, c_t
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train) 
         X = X.dimshuffle((1,0,2))
 
@@ -344,8 +346,8 @@ class LSTM(Layer):
             self._step, 
             sequences=[xi, xf, xo, xc],
             outputs_info=[
-                alloc_zeros_matrix(X.shape[1], self.output_dim), 
-                alloc_zeros_matrix(X.shape[1], self.output_dim)
+                T.unbroadcast(alloc_zeros_matrix(X.shape[1], self.output_dim), 1),
+                T.unbroadcast(alloc_zeros_matrix(X.shape[1], self.output_dim), 1)
             ], 
             non_sequences=[self.U_i, self.U_f, self.U_o, self.U_c], 
             truncate_gradient=self.truncate_gradient 
@@ -361,6 +363,7 @@ class LSTM(Layer):
             "init":self.init.__name__,
             "inner_init":self.inner_init.__name__,
             "activation":self.activation.__name__,
+            "inner_activation":self.inner_activation.__name__,
             "truncate_gradient":self.truncate_gradient,
             "return_sequences":self.return_sequences}
         

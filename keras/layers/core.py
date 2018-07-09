@@ -5,7 +5,6 @@ import theano
 import theano.tensor as T
 
 from .. import activations, initializations
-from ..regularizers import identity
 from ..utils.theano_utils import shared_zeros, floatX
 from ..utils.generic_utils import make_tuple
 
@@ -16,18 +15,16 @@ srng = RandomStreams()
 class Layer(object):
     def __init__(self):
         self.params = []
-        self.regularizer = []
-        self.constraint = []
 
-    def connect(self, previous_layer):
-        self.previous_layer = previous_layer
+    def connect(self, node):
+        self.previous = node
 
-    def output(self, train):
+    def get_output(self, train):
         raise NotImplementedError
 
     def get_input(self, train):
-        if hasattr(self, 'previous_layer'):
-            return self.previous_layer.output(train=train)
+        if hasattr(self, 'previous'):
+            return self.previous.get_output(train=train)
         else:
             return self.input
 
@@ -45,6 +42,67 @@ class Layer(object):
         return {"name":self.__class__.__name__}
 
 
+class Merge(object): 
+    def __init__(self, models, mode='sum'):
+        ''' Merge the output of a list of models into a single tensor.
+            mode: {'sum', 'concat'}
+        '''
+        if len(models) < 2:
+            raise Exception("Please specify two or more input models to merge")
+        self.mode = mode
+        self.models = models
+        self.params = []
+        self.regularizers = []
+        self.constraints = []
+        for m in self.models:
+            self.params += m.params
+            self.regularizers += m.regularizers
+            self.constraints += m.constraints
+
+    def get_output(self, train=False):
+        if self.mode == 'sum':
+            s = self.models[0].get_output(train)
+            for i in range(1, len(self.models)):
+                s += self.models[i].get_output(train)
+            return s
+        elif self.mode == 'concat':
+            inputs = [self.models[i].get_output(train) for i in range(len(self.models))]
+            return T.concatenate(inputs, axis=-1)
+        else:
+            raise Exception('Unknown merge mode')
+
+    def get_input(self, train=False):
+        res = []
+        for i in range(len(self.models)):
+            o = self.models[i].get_input(train)
+            if type(o) == list:
+                res += o
+            else:
+                res.append(o)
+        return res
+
+    @property
+    def input(self):
+        return self.get_input()    
+
+    def get_weights(self):
+        weights = []
+        for m in self.models:
+            weights += m.get_weights()
+        return weights
+
+    def set_weights(self, weights):
+        for i in range(len(self.models)):
+            nb_param = len(self.models[i].params)
+            self.models[i].set_weights(weights[:nb_param])
+            weights = weights[nb_param:]
+
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "models":[m.get_config() for m in self.models],
+            "mode":self.mode}
+
+
 class Dropout(Layer):
     '''
         Hinton's dropout.
@@ -53,7 +111,7 @@ class Dropout(Layer):
         super(Dropout,self).__init__()
         self.p = p
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         if self.p > 0.:
             retain_prob = 1. - self.p
@@ -78,13 +136,15 @@ class Activation(Layer):
         self.target = target
         self.beta = beta
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         return self.activation(X)
 
     def get_config(self):
         return {"name":self.__class__.__name__,
-            "activation":self.activation.__name__}
+            "activation":self.activation.__name__,
+            "target":self.target,
+            "beta":self.beta}
 
 
 class Reshape(Layer):
@@ -97,14 +157,14 @@ class Reshape(Layer):
         super(Reshape,self).__init__()
         self.dims = dims
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         nshape = make_tuple(X.shape[0], *self.dims)
         return theano.tensor.reshape(X, nshape)
 
     def get_config(self):
         return {"name":self.__class__.__name__,
-            "p":self.p}
+            "dims":self.dims}
 
 
 class Flatten(Layer):
@@ -115,7 +175,7 @@ class Flatten(Layer):
     def __init__(self):
         super(Flatten,self).__init__()
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         size = theano.tensor.prod(X.shape) // X.shape[0]
         nshape = (X.shape[0], size)
@@ -133,7 +193,7 @@ class RepeatVector(Layer):
         super(RepeatVector,self).__init__()
         self.n = n
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         tensors = [X]*self.n
         stacked = theano.tensor.stack(*tensors)
@@ -148,7 +208,9 @@ class Dense(Layer):
     '''
         Just your regular fully connected NN layer.
     '''
-    def __init__(self, input_dim, output_dim, init='glorot_uniform', activation='linear', weights=None, W_regularizer=identity, b_regularizer=identity, W_constraint=identity, b_constraint=identity):
+    def __init__(self, input_dim, output_dim, init='glorot_uniform', activation='linear', weights=None, 
+        W_regularizer=None, b_regularizer=None, W_constraint=None, b_constraint=None):
+
         super(Dense,self).__init__()
         self.init = initializations.get(init)
         self.activation = activations.get(activation)
@@ -161,13 +223,13 @@ class Dense(Layer):
 
         self.params = [self.W, self.b]
 
-        self.regularizer = [W_regularizer, b_regularizer]
-        self.constraint = [W_constraint, b_constraint]
+        self.regularizers = [W_regularizer, b_regularizer]
+        self.constraints = [W_constraint, b_constraint]
 
         if weights is not None:
             self.set_weights(weights)
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
         output = self.activation(T.dot(X, self.W) + self.b)
         return output
@@ -188,7 +250,9 @@ class TimeDistributedDense(Layer):
        Tensor output dimensions:  (nb_sample, shared_dimension, output_dim)
 
     '''
-    def __init__(self, input_dim, output_dim, init='glorot_uniform', activation='linear', weights=None, W_regularizer=identity, b_regularizer=identity, W_constraint=identity, b_constraint=identity):
+    def __init__(self, input_dim, output_dim, init='glorot_uniform', activation='linear', weights=None, 
+        W_regularizer=None, b_regularizer=None, W_constraint=None, b_constraint=None):
+
         super(TimeDistributedDense,self).__init__()
         self.init = initializations.get(init)
         self.activation = activations.get(activation)
@@ -201,13 +265,13 @@ class TimeDistributedDense(Layer):
 
         self.params = [self.W, self.b]
 
-        self.regularizer = [W_regularizer, b_regularizer]
-        self.constraint = [W_constraint, b_constraint]
+        self.regularizers = [W_regularizer, b_regularizer]
+        self.constraints = [W_constraint, b_constraint]
 
         if weights is not None:
             self.set_weights(weights)
 
-    def output(self, train):
+    def get_output(self, train):
         X = self.get_input(train)
 
         def act_func(X):
@@ -224,3 +288,45 @@ class TimeDistributedDense(Layer):
             "output_dim":self.output_dim,
             "init":self.init.__name__,
             "activation":self.activation.__name__}
+
+
+
+
+class MaxoutDense(Layer):
+    '''
+        Max-out layer, nb_feature is the number of pieces in the piecewise linear approx.
+        Refer to http://arxiv.org/pdf/1302.4389.pdf
+    '''
+    def __init__(self, input_dim, output_dim, nb_feature=4, init='glorot_uniform', weights=None, 
+        W_regularizer=None, b_regularizer=None, W_constraint=None, b_constraint=None):
+
+        super(MaxoutDense,self).__init__()
+        self.init = initializations.get(init)
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.nb_feature = nb_feature
+
+        self.input = T.matrix()
+        self.W = self.init((self.nb_feature, self.input_dim, self.output_dim))
+        self.b = shared_zeros((self.nb_feature, self.output_dim))
+
+        self.params = [self.W, self.b]
+
+        self.regularizers = [W_regularizer, b_regularizer]
+        self.constraints = [W_constraint, b_constraint]
+
+        if weights is not None:
+            self.set_weights(weights)
+
+    def get_output(self, train):
+        X = self.get_input(train)
+        # -- don't need activation since it's just linear.
+        output = T.max(T.dot(X, self.W) + self.b, axis=1)
+        return output
+
+    def get_config(self):
+        return {"name":self.__class__.__name__,
+            "input_dim":self.input_dim,
+            "output_dim":self.output_dim,
+            "init":self.init.__name__,
+            "nb_feature" : self.nb_feature}
