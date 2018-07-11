@@ -7,6 +7,8 @@ from .common import _FLOATX, _EPSILON
 
 
 # INTERNAL UTILS
+theano.config.floatX = _FLOATX
+
 
 def _on_gpu():
     '''Returns whether the session is set to
@@ -28,34 +30,8 @@ if _on_gpu():
 def variable(value, dtype=_FLOATX, name=None):
     '''Instantiate a tensor variable.
     '''
-    return theano.shared(np.asarray(value, dtype=dtype), name=name)
-
-
-def shape(x):
-    '''Return the shape of a tensor.
-
-    Warning: type returned will be different for
-    Theano backend (Theano tensor type) and TF backend (TF TensorShape).
-    '''
-    return x.shape
-
-
-def eval(x):
-    '''Run a graph.
-    '''
-    return x.eval()
-
-
-def zeros(shape, dtype=_FLOATX, name=None):
-    '''Instantiate an all-zeros variable.
-    '''
-    return variable(np.zeros(shape), dtype, name)
-
-
-def ones(shape, dtype=_FLOATX, name=None):
-    '''Instantiate an all-ones variable.
-    '''
-    return variable(np.ones(shape), dtype, name)
+    value = np.asarray(value, dtype=dtype)
+    return theano.shared(value=value, name=name, strict=False)
 
 
 def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
@@ -79,6 +55,57 @@ def placeholder(shape=None, ndim=None, dtype=_FLOATX, name=None):
         raise Exception('ndim too large: ' + str(ndim))
 
 
+def shape(x):
+    '''Return the shape of a tensor.
+
+    Warning: type returned will be different for
+    Theano backend (Theano tensor type) and TF backend (TF TensorShape).
+    '''
+    return x.shape
+
+
+def ndim(x):
+    return x.ndim
+
+
+def eval(x):
+    '''Run a graph.
+    '''
+    return x.eval()
+
+
+def zeros(shape, dtype=_FLOATX, name=None):
+    '''Instantiate an all-zeros variable.
+    '''
+    return variable(np.zeros(shape), dtype, name)
+
+
+def ones(shape, dtype=_FLOATX, name=None):
+    '''Instantiate an all-ones variable.
+    '''
+    return variable(np.ones(shape), dtype, name)
+
+
+def ones_like(x):
+    return T.ones_like(x)
+
+
+def zeros_like(x):
+    return T.zeros_like(x)
+
+
+def count_params(x):
+    '''Return number of scalars in a tensor.
+
+    Return: numpy integer.
+    '''
+    return np.prod(x.shape.eval())
+
+
+def cast(x, dtype):
+    return T.cast(x, dtype)
+
+
 # LINEAR ALGEBRA
 
 '''
@@ -95,7 +122,17 @@ def transpose(x):
     return T.transpose(x)
 
 
+def gather(reference, indices):
+    '''reference: a tensor.
+    indices: an int tensor of indices.
+
+    Return: a tensor of same type as reference.
+    '''
+    return reference[indices]
+
+
 # ELEMENT-WISE OPERATIONS
+
 
 def max(x, axis=None, keepdims=False):
     return T.max(x, axis=axis, keepdims=keepdims)
@@ -111,8 +148,18 @@ def sum(x, axis=None, keepdims=False):
     return T.sum(x, axis=axis, keepdims=keepdims)
 
 
+def prod(x, axis=None, keepdims=False):
+    '''Multiply the values in a tensor, alongside the specified axis.
+    '''
+    return T.prod(x, axis=axis, keepdims=keepdims)
+
+
 def mean(x, axis=None, keepdims=False):
     return T.mean(x, axis=axis, keepdims=keepdims)
+
+
+def std(x, axis=None, keepdims=False):
+    return T.std(x, axis=axis, keepdims=keepdims)
 
 
 def any(x, axis=None, keepdims=False):
@@ -138,7 +185,7 @@ def abs(x):
 
 
 def sqrt(x):
-    x = T.clip(x, _EPSILON, np.inf)
+    x = T.clip(x, 0., np.inf)
     return T.sqrt(x)
 
 
@@ -152,6 +199,10 @@ def log(x):
 
 def round(x):
     return T.round(x)
+
+
+def pow(x, a):
+    return T.pow(x, a)
 
 
 def clip(x, min_value, max_value):
@@ -169,7 +220,7 @@ def maximum(x, y):
 
 
 def minimum(x, y):
-    return T.maximum(x, y)
+    return T.minimum(x, y)
 
 
 # SHAPE OPERATIONS
@@ -192,16 +243,82 @@ def permute_dimensions(x, pattern):
     return x.dimshuffle(pattern)
 
 
-def repeat(x, n, axis=-1):
-    return T.extra_ops.repeat(x, n, axis=axis)
+def repeat(x, n):
+    '''Repeat a 2D tensor:
+
+    if x has shape (samples, dim) and n=2,
+    the output will have shape (samples, 2, dim)
+    '''
+    tensors = [x] * n
+    stacked = T.stack(*tensors)
+    return stacked.dimshuffle((1, 0, 2))
+
+
+def tile(x, n):
+    return T.tile(x, n)
 
 
 def flatten(x):
+    '''Turn a n-D tensor into a 2D tensor where
+    the first dimension is conserved.
+    '''
     x = T.reshape(x, (x.shape[0], T.prod(x.shape) // x.shape[0]))
     return x
 
 
+def expand_dims(x, dim=-1):
+    '''Add a 1-sized dimension at index "dim".
+    '''
+    pattern = [i for i in range(x.type.ndim)]
+    if dim < 0:
+        if x.type.ndim == 0:
+            dim = 0
+        else:
+            dim = dim % x.type.ndim + 1
+    pattern.insert(dim, 'x')
+    return x.dimshuffle(pattern)
+
+
+def squeeze(x, axis):
+    '''Remove a 1-dimension from the tensor at index "axis".
+    '''
+    x = T.addbroadcast(x, axis)
+    return T.squeeze(x)
+
+
+def temporal_padding(x, padding=1):
+    '''Pad the middle dimension of a 3D tensor
+    with "padding" zeros left and right.
+
+    Appologies for the inane API, but Theano makes this
+    really hard.
+    '''
+    input_shape = x.shape
+    output_shape = (input_shape[0],
+                    input_shape[1] + 2 * padding,
+                    input_shape[2])
+    output = T.zeros(output_shape)
+    return T.set_subtensor(output[:, padding:x.shape[1] + padding, :], x)
+
+
+def spatial_2d_padding(x, padding=(1, 1)):
+    '''Pad the 2nd and 3rd dimensions of a 4D tensor
+    with "padding[0]" and "padding[1]" (resp.) zeros left and right.
+    '''
+    input_shape = x.shape
+    output_shape = (input_shape[0],
+                    input_shape[1],
+                    input_shape[2] + 2 * padding[0],
+                    input_shape[3] + 2 * padding[1])
+    output = T.zeros(output_shape)
+    indices = (slice(None),
+               slice(None),
+               slice(padding[0], input_shape[2] + padding[0]),
+               slice(padding[1], input_shape[3] + padding[1]))
+    return T.set_subtensor(output[indices], x)
+
 # VALUE MANIPULATION
+
 
 def get_value(x):
     if not hasattr(x, 'get_value'):
@@ -223,9 +340,7 @@ class Function(object):
                                         allow_input_downcast=True, **kwargs)
 
     def __call__(self, inputs):
-        if len(inputs) == 1:
-            inputs = inputs[0]  # Theano is pretty dumb there tbh
-        return self.function(inputs)
+        return self.function(*inputs)
 
 
 def function(inputs, outputs, updates=[]):
@@ -238,12 +353,83 @@ def gradients(loss, variables):
 
 # CONTROL FLOW
 
-def rnn(step_function, inputs, initial_states, go_backwards=False):
-    '''TODO
+def rnn(step_function, inputs, initial_states,
+        go_backwards=False, masking=True):
+    '''Iterates over the time dimension of a tensor.
 
-    Wrapper for scan
+    Parameters
+    ----------
+    inputs: tensor of temporal data of shape (samples, time, ...)
+        (at least 3D).
+    step_function:
+        Parameters:
+            input: tensor with shape (samples, ...) (no time dimension),
+                representing input for the batch of samples at a certain
+                time step.
+            states: list of tensors.
+        Returns:
+            output: tensor with shape (samples, ...) (no time dimension),
+            new_states: list of tensors, same length and shapes
+                as 'states'.
+    initial_states: tensor with shape (samples, ...) (no time dimension),
+        containing the initial values for the states used in
+        the step function.
+    go_backwards: boolean. If True, do the iteration over
+        the time dimension in reverse order.
+    masking: boolean. If true, any input timestep inputs[s, i]
+        that is all-zeros will be skipped (states will be passed to
+        the next step unchanged) and the corresponding output will
+        be all zeros.
+
+    Returns
+    -------
+    A tuple (last_output, outputs, new_states).
+        last_output: the latest output of the rnn, of shape (samples, ...)
+        outputs: tensor with shape (samples, time, ...) where each
+            entry outputs[s, t] is the output of the step function
+            at time t for sample s.
+        new_states: list of tensors, latest states returned by
+            the step function, of shape (samples, ...).
     '''
-    pass
+    inputs = inputs.dimshuffle((1, 0, 2))
+
+    def _step(*args):
+        global single_result
+        input = args[0]
+        states = args[1:]
+        output, new_states = step_function(input, states)
+        if masking:
+            # if all-zero input timestep, return
+            # all-zero output and unchanged states
+            switch = T.any(input)
+            output = T.switch(switch, output, 0. * output)
+            return_states = []
+            for state, new_state in zip(states, new_states):
+                return_states.append(T.switch(switch, new_state, state))
+            return [output] + return_states
+        else:
+            return [output] + new_states
+
+    results, _ = theano.scan(
+        _step,
+        sequences=inputs,
+        outputs_info=[None] + initial_states,
+        go_backwards=go_backwards)
+
+    # deal with Theano API inconsistency
+    if type(results) is list:
+        outputs = results[0]
+        states = results[1:]
+    else:
+        outputs = results
+        states = []
+
+    outputs = T.squeeze(outputs)
+    last_output = outputs[-1]
+
+    outputs = outputs.dimshuffle((1, 0, 2))
+    states = [T.squeeze(state[-1]) for state in states]
+    return last_output, outputs, states
 
 
 def switch(condition, then_expression, else_expression):
@@ -369,7 +555,8 @@ def conv2d(x, kernel, strides=(1, 1), border_mode='valid', dim_ordering='th'):
     return conv_out
 
 
-def maxpool2d(x, pool_size, strides=(1, 1), border_mode='valid', dim_ordering='th'):
+def maxpool2d(x, pool_size, strides=(1, 1), border_mode='valid',
+              dim_ordering='th'):
     if border_mode == 'same':
         # TODO: add implementation for border_mode="same"
         raise Exception('border_mode="same" not supported with Theano.')
@@ -416,12 +603,6 @@ def random_uniform(shape, low=0.0, high=1.0, dtype=_FLOATX, seed=None):
 '''
 more TODO:
 
-shape_padright/left
-tensordot
-batched_tensordot
-
-addbroadcast -> remove usage?
-unbroadcast -> remove usage?
-
-embedding: make sure that [] operator works for TF
+tensordot -> soon to be introduced in TF
+batched_tensordot -> reimplement
 '''
