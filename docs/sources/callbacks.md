@@ -1,6 +1,6 @@
 ## Usage of callbacks
 
-A callback is a set of functions to be applied at given stages of the training procedure. You can use callbacks to get a view on internal states and statistics of the model during training. You can pass a list of callback (as the keyword argument `callbacks`) to the `.fit()` method of the `Sequential` model. The relevant methods of the callbacks will then be called at each stage of the training. 
+A callback is a set of functions to be applied at given stages of the training procedure. You can use callbacks to get a view on internal states and statistics of the model during training. You can pass a list of callbacks (as the keyword argument `callbacks`) to the `.fit()` method of the `Sequential` model. The relevant methods of the callbacks will then be called at each stage of the training. 
 
 ---
 
@@ -27,6 +27,26 @@ The `logs` dictionary will contain keys for quantities relevant to the current b
 
 ---
 
+## Available callbacks
+
+```python
+keras.callbacks.ModelCheckpoint(filepath, verbose=0, save_best_only=False)
+```
+
+Save the model after every epoch. If `save_best_only=True`, the latest best model according to the validation loss will not be overwritten.
+`filepath` can contain named formatting options, which will be filled the value of `epoch` and keys in `logs` (passed in `on_epoch_end`).
+
+For example: if `filepath` is `weights.{epoch:02d}-{val_loss:.2f}.hdf5`, then multiple files will be save with the epoch number and the validation loss.
+
+
+```python
+keras.callbacks.EarlyStopping(monitor='val_loss', patience=0, verbose=0)
+```
+
+Stop training after no improvement of the metric `monitor` is seen for `patience` epochs.
+
+---
+
 
 ## Create a callback
 
@@ -35,7 +55,7 @@ You can create a custom callback by extending the base class `keras.callbacks.Ca
 Here's a simple example saving a list of losses over each batch during training:
 ```python
 class LossHistory(keras.callbacks.Callback):
-    def on_train_begin(self):
+    def on_train_begin(self, logs={}):
         self.losses = []
 
     def on_batch_end(self, batch, logs={}):
@@ -44,18 +64,18 @@ class LossHistory(keras.callbacks.Callback):
 
 ---
 
-### Example to record the loss history
+### Example: recording loss history
 
 ```python
 class LossHistory(keras.callbacks.Callback):
-    def on_train_begin(self):
+    def on_train_begin(self, logs={}):
         self.losses = []
 
     def on_batch_end(self, batch, logs={}):
         self.losses.append(logs.get('loss'))
 
 model = Sequential()
-model.add(Dense(784, 10, init='uniform'))
+model.add(Dense(10, input_dim=784, init='uniform'))
 model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 
@@ -71,13 +91,13 @@ print history.losses
 
 ---
 
-### Example to checkpoint models
+### Example: model checkpoints
 
 ```python
 from keras.callbacks import ModelCheckpoint
 
 model = Sequential()
-model.add(Dense(784, 10, init='uniform'))
+model.add(Dense(10, input_dim=784, init='uniform'))
 model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
 

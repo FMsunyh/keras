@@ -1,6 +1,11 @@
 *.DS_Store
 *.pyc
+*.swp
 temp/*
-datasets/data/*
-datasets/temp/*
-.idea/
+dist/*
+build/*
+keras/datasets/data/*
+keras/datasets/temp/*
+docs/site/*
+docs/theme/*
+tags
