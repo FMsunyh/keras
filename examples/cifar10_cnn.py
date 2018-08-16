@@ -108,14 +108,14 @@ else:
         print('-'*40)
         print("Training...")
         # batch train with realtime data augmentation
-        progbar = generic_utils.Progbar(X_train.shape[0])
+        progbar = generic_utils.Progbar(X_train.shape[0],verbose=0)
         for X_batch, Y_batch in datagen.flow(X_train, Y_train):
             loss = model.train_on_batch(X_batch, Y_batch)
             progbar.add(X_batch.shape[0], values=[("train loss", loss)])
 
         print("Testing...")
         # test time!
-        progbar = generic_utils.Progbar(X_test.shape[0])
+        progbar = generic_utils.Progbar(X_test.shape[0],verbose=0)
         for X_batch, Y_batch in datagen.flow(X_test, Y_test):
             score = model.test_on_batch(X_batch, Y_batch)
             progbar.add(X_batch.shape[0], values=[("test loss", score)])
