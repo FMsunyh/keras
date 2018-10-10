@@ -40,6 +40,10 @@ class TestBackend(object):
 
     def test_linear_operations(self):
         check_two_tensor_operation('dot', (4, 2), (2, 4))
+        check_two_tensor_operation('dot', (4, 2), (5, 2, 3))
+
+        check_two_tensor_operation('batch_dot', (4, 2, 3), (4, 5, 3),
+                                   axes=(2, 2))
         check_single_tensor_operation('transpose', (4, 2))
 
     def test_shape_operations(self):
@@ -114,16 +118,20 @@ class TestBackend(object):
 
         check_single_tensor_operation('min', (4, 2))
         check_single_tensor_operation('min', (4, 2), axis=1, keepdims=True)
+        check_single_tensor_operation('min', (4, 2, 3), axis=[1, -1])
 
         check_single_tensor_operation('mean', (4, 2))
         check_single_tensor_operation('mean', (4, 2), axis=1, keepdims=True)
         check_single_tensor_operation('mean', (4, 2, 3), axis=-1, keepdims=True)
+        check_single_tensor_operation('mean', (4, 2, 3), axis=[1, -1])
 
         check_single_tensor_operation('std', (4, 2))
         check_single_tensor_operation('std', (4, 2), axis=1, keepdims=True)
+        check_single_tensor_operation('std', (4, 2, 3), axis=[1, -1])
 
         check_single_tensor_operation('prod', (4, 2))
         check_single_tensor_operation('prod', (4, 2), axis=1, keepdims=True)
+        check_single_tensor_operation('prod', (4, 2, 3), axis=[1, -1])
 
         # does not work yet, wait for bool <-> int casting in TF (coming soon)
         # check_single_tensor_operation('any', (4, 2))
@@ -141,6 +149,7 @@ class TestBackend(object):
         check_single_tensor_operation('exp', (4, 2))
         check_single_tensor_operation('log', (4, 2))
         check_single_tensor_operation('round', (4, 2))
+        check_single_tensor_operation('sign', (4, 2))
         check_single_tensor_operation('pow', (4, 2), a=3)
         check_single_tensor_operation('clip', (4, 2), min_value=0.4,
                                       max_value=0.6)
@@ -218,24 +227,24 @@ class TestBackend(object):
             return step_function
 
         th_rnn_step_fn = rnn_step_fn(input_dim, output_dim, KTH)
-        inputs = KTH.variable(input_val)
-        initial_states = [KTH.variable(init_state_val)]
-        last_output, outputs, new_states = KTH.rnn(th_rnn_step_fn, inputs,
-                                                   initial_states,
+        th_inputs = KTH.variable(input_val)
+        th_initial_states = [KTH.variable(init_state_val)]
+        last_output, outputs, new_states = KTH.rnn(th_rnn_step_fn, th_inputs,
+                                                   th_initial_states,
                                                    go_backwards=False,
-                                                   masking=False)
+                                                   mask=None)
         th_last_output = KTH.eval(last_output)
         th_outputs = KTH.eval(outputs)
         assert len(new_states) == 1
         th_state = KTH.eval(new_states[0])
 
         tf_rnn_step_fn = rnn_step_fn(input_dim, output_dim, KTF)
-        inputs = KTF.variable(input_val)
-        initial_states = [KTF.variable(init_state_val)]
-        last_output, outputs, new_states = KTF.rnn(tf_rnn_step_fn, inputs,
-                                                   initial_states,
+        tf_inputs = KTF.variable(input_val)
+        tf_initial_states = [KTF.variable(init_state_val)]
+        last_output, outputs, new_states = KTF.rnn(tf_rnn_step_fn, tf_inputs,
+                                                   tf_initial_states,
                                                    go_backwards=False,
-                                                   masking=False)
+                                                   mask=None)
         tf_last_output = KTF.eval(last_output)
         tf_outputs = KTF.eval(outputs)
         assert len(new_states) == 1
@@ -244,6 +253,80 @@ class TestBackend(object):
         assert_allclose(tf_last_output, th_last_output, atol=1e-04)
         assert_allclose(tf_outputs, th_outputs, atol=1e-04)
         assert_allclose(tf_state, th_state, atol=1e-04)
+
+        # test unroll
+        unrolled_last_output, unrolled_outputs, unrolled_new_states = KTH.rnn(
+            th_rnn_step_fn, th_inputs,
+            th_initial_states,
+            go_backwards=False,
+            mask=None,
+            unroll=True,
+            input_length=timesteps)
+
+        unrolled_th_last_output = KTH.eval(unrolled_last_output)
+        unrolled_th_outputs = KTH.eval(unrolled_outputs)
+        assert len(unrolled_new_states) == 1
+        unrolled_th_state = KTH.eval(unrolled_new_states[0])
+        assert_allclose(th_last_output, unrolled_th_last_output, atol=1e-04)
+        assert_allclose(th_outputs, unrolled_th_outputs, atol=1e-04)
+        assert_allclose(th_state, unrolled_th_state, atol=1e-04)
+
+        # test unroll with backwards = True
+        bwd_last_output, bwd_outputs, bwd_new_states = KTH.rnn(
+            th_rnn_step_fn, th_inputs,
+            th_initial_states,
+            go_backwards=True,
+            mask=None)
+        bwd_th_last_output = KTH.eval(bwd_last_output)
+        bwd_th_outputs = KTH.eval(bwd_outputs)
+        assert len(bwd_new_states) == 1
+        bwd_th_state = KTH.eval(bwd_new_states[0])
+
+        bwd_unrolled_last_output, bwd_unrolled_outputs, bwd_unrolled_new_states = KTH.rnn(
+            th_rnn_step_fn, th_inputs,
+            th_initial_states,
+            go_backwards=True,
+            mask=None,
+            unroll=True,
+            input_length=timesteps)
+
+        bwd_unrolled_th_last_output = KTH.eval(bwd_unrolled_last_output)
+        bwd_unrolled_th_outputs = KTH.eval(bwd_unrolled_outputs)
+        assert len(bwd_unrolled_new_states) == 1
+        bwd_unrolled_th_state = KTH.eval(bwd_unrolled_new_states[0])
+        assert_allclose(bwd_th_last_output, bwd_unrolled_th_last_output, atol=1e-04)
+        assert_allclose(bwd_th_outputs, bwd_unrolled_th_outputs, atol=1e-04)
+        assert_allclose(bwd_th_state, bwd_unrolled_th_state, atol=1e-04)
+
+        # test unroll with masking
+        np_mask = np.random.randint(2, size=(32, timesteps))
+        th_mask = KTH.variable(np_mask)
+
+        masked_last_output, masked_outputs, masked_new_states = KTH.rnn(
+            th_rnn_step_fn, th_inputs,
+            th_initial_states,
+            go_backwards=False,
+            mask=th_mask)
+        masked_th_last_output = KTH.eval(masked_last_output)
+        masked_th_outputs = KTH.eval(masked_outputs)
+        assert len(masked_new_states) == 1
+        masked_th_state = KTH.eval(masked_new_states[0])
+
+        unrolled_masked_last_output, unrolled_masked_outputs, unrolled_masked_new_states = KTH.rnn(
+            th_rnn_step_fn, th_inputs,
+            th_initial_states,
+            go_backwards=False,
+            mask=th_mask,
+            unroll=True,
+            input_length=timesteps)
+        unrolled_masked_th_last_output = KTH.eval(unrolled_masked_last_output)
+        unrolled_masked_th_outputs = KTH.eval(unrolled_masked_outputs)
+        assert len(unrolled_masked_new_states) == 1
+        unrolled_masked_th_state = KTH.eval(unrolled_masked_new_states[0])
+
+        assert_allclose(unrolled_masked_th_last_output, masked_th_last_output, atol=1e-04)
+        assert_allclose(unrolled_masked_th_outputs, masked_th_outputs, atol=1e-04)
+        assert_allclose(unrolled_masked_th_state, masked_th_state, atol=1e-04)
 
     def test_switch(self):
         val = np.random.random()
@@ -269,7 +352,7 @@ class TestBackend(object):
         check_single_tensor_operation('tanh', (4, 2))
 
         # dropout
-        val = np.random.random((20, 20))
+        val = np.random.random((100, 100))
         xth = KTH.variable(val)
         xtf = KTF.variable(val)
         zth = KTH.eval(KTH.dropout(xth, level=0.2))
@@ -281,8 +364,10 @@ class TestBackend(object):
         check_two_tensor_operation('binary_crossentropy', (4, 2), (4, 2), from_logits=True)
         check_two_tensor_operation('categorical_crossentropy', (4, 2), (4, 2), from_logits=True)
         check_two_tensor_operation('binary_crossentropy', (4, 2), (4, 2), from_logits=False)
-
         check_two_tensor_operation('categorical_crossentropy', (4, 2), (4, 2), from_logits=False)
+
+        check_single_tensor_operation('l2_normalize', (4, 3), axis=-1)
+        check_single_tensor_operation('l2_normalize', (4, 3), axis=1)
 
     # def test_conv2d(self):
     #     '''conv2d works "properly" with Theano and TF but outputs different
@@ -324,28 +409,44 @@ class TestBackend(object):
     def test_random_normal(self):
         mean = 0.
         std = 1.
-        rand = KTF.get_value(KTF.random_normal((1000, 1000), mean=mean, std=std))
+        rand = KTF.eval(KTF.random_normal((1000, 1000), mean=mean, std=std))
         assert(rand.shape == (1000, 1000))
         assert(np.abs(np.mean(rand) - mean) < 0.01)
         assert(np.abs(np.std(rand) - std) < 0.01)
 
-        rand = KTF.get_value(KTF.random_normal((1000, 1000), mean=mean, std=std))
+        rand = KTH.eval(KTH.random_normal((1000, 1000), mean=mean, std=std))
         assert(rand.shape == (1000, 1000))
         assert(np.abs(np.mean(rand) - mean) < 0.01)
         assert(np.abs(np.std(rand) - std) < 0.01)
 
     def test_random_uniform(self):
-        mean = 0.
-        std = 1.
-        rand = KTF.get_value(KTF.random_normal((1000, 1000), mean=mean, std=std))
+        min = -1.
+        max = 1.
+        rand = KTF.eval(KTF.random_uniform((1000, 1000), min, max))
         assert(rand.shape == (1000, 1000))
-        assert(np.abs(np.mean(rand) - mean) < 0.01)
-        assert(np.abs(np.std(rand) - std) < 0.01)
+        assert(np.abs(np.mean(rand)) < 0.01)
+        assert(np.max(rand) <= max)
+        assert(np.min(rand) >= min)
 
-        rand = KTF.get_value(KTF.random_normal((1000, 1000), mean=mean, std=std))
+        rand = KTH.eval(KTH.random_uniform((1000, 1000), min, max))
         assert(rand.shape == (1000, 1000))
-        assert(np.abs(np.mean(rand) - mean) < 0.01)
-        assert(np.abs(np.std(rand) - std) < 0.01)
+        assert(np.abs(np.mean(rand)) < 0.01)
+        assert(np.max(rand) <= max)
+        assert(np.min(rand) >= min)
+
+    def test_random_binomial(self):
+        p = 0.5
+        rand = KTF.eval(KTF.random_binomial((1000, 1000), p))
+        assert(rand.shape == (1000, 1000))
+        assert(np.abs(np.mean(rand) - p) < 0.01)
+        assert(np.max(rand) == 1)
+        assert(np.min(rand) == 0)
+
+        rand = KTH.eval(KTH.random_binomial((1000, 1000), p))
+        assert(rand.shape == (1000, 1000))
+        assert(np.abs(np.mean(rand) - p) < 0.01)
+        assert(np.max(rand) == 1)
+        assert(np.min(rand) == 0)
 
 
 if __name__ == '__main__':

@@ -92,7 +92,8 @@ class Callback(object):
     will include the following quantities in the `logs` that
     it passes to its callbacks:
 
-        on_epoch_end: logs optionally include `val_loss`
+        on_epoch_end: logs include `acc` and `loss`, and
+            optionally include `val_loss`
             (if validation is enabled in `fit`), and `val_acc`
             (if validation and accuracy monitoring are enabled).
         on_batch_begin: logs include `size`,
@@ -129,11 +130,35 @@ class Callback(object):
 
 
 class BaseLogger(Callback):
-    '''Callback that prints events to the standard output.
+    '''Callback that accumulates epoch averages of
+    the metrics being monitored.
 
     This callback is automatically applied to
-    every Keras model (it is the basis of the verbosity modes
-    in models).
+    every Keras model.
+    '''
+    def on_epoch_begin(self, epoch, logs={}):
+        self.seen = 0
+        self.totals = {}
+
+    def on_batch_end(self, batch, logs={}):
+        batch_size = logs.get('size', 0)
+        self.seen += batch_size
+
+        for k, v in logs.items():
+            if k in self.totals:
+                self.totals[k] += v * batch_size
+            else:
+                self.totals[k] = v * batch_size
+
+    def on_epoch_end(self, epoch, logs={}):
+        for k in self.params['metrics']:
+            if k in self.totals:
+                # make value available to next callbacks
+                logs[k] = self.totals[k] / self.seen
+
+
+class ProgbarLogger(Callback):
+    '''Callback that prints metrics to stdout.
     '''
     def on_train_begin(self, logs={}):
         self.verbose = self.params['verbose']
@@ -145,7 +170,6 @@ class BaseLogger(Callback):
             self.progbar = Progbar(target=self.params['nb_sample'],
                                    verbose=self.verbose)
         self.seen = 0
-        self.totals = {}
 
     def on_batch_begin(self, batch, logs={}):
         if self.seen < self.params['nb_sample']:
@@ -155,11 +179,6 @@ class BaseLogger(Callback):
         batch_size = logs.get('size', 0)
         self.seen += batch_size
 
-        for k, v in logs.items():
-            if k in self.totals:
-                self.totals[k] += v * batch_size
-            else:
-                self.totals[k] = v * batch_size
         for k in self.params['metrics']:
             if k in logs:
                 self.log_values.append((k, logs[k]))
@@ -171,8 +190,6 @@ class BaseLogger(Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         for k in self.params['metrics']:
-            if k in self.totals:
-                self.log_values.append((k, self.totals[k] / self.seen))
             if k in logs:
                 self.log_values.append((k, logs[k]))
         if self.verbose:
@@ -191,26 +208,8 @@ class History(Callback):
         self.epoch = []
         self.history = {}
 
-    def on_epoch_begin(self, epoch, logs={}):
-        self.seen = 0
-        self.totals = {}
-
-    def on_batch_end(self, batch, logs={}):
-        batch_size = logs.get('size', 0)
-        self.seen += batch_size
-        for k, v in logs.items():
-            if k in self.totals:
-                self.totals[k] += v * batch_size
-            else:
-                self.totals[k] = v * batch_size
-
     def on_epoch_end(self, epoch, logs={}):
         self.epoch.append(epoch)
-        for k, v in self.totals.items():
-            if k not in self.history:
-                self.history[k] = []
-            self.history[k].append(v / self.seen)
-
         for k, v in logs.items():
             if k not in self.history:
                 self.history[k] = []
@@ -256,7 +255,7 @@ class ModelCheckpoint(Callback):
 
         if mode not in ['auto', 'min', 'max']:
             warnings.warn('ModelCheckpoint mode %s is unknown, '
-                          'fallback to auto mode.' % (self.mode),
+                          'fallback to auto mode.' % (mode),
                           RuntimeWarning)
             mode = 'auto'
 
@@ -373,26 +372,10 @@ class RemoteMonitor(Callback):
     def __init__(self, root='http://localhost:9000'):
         self.root = root
 
-    def on_epoch_begin(self, epoch, logs={}):
-        self.seen = 0
-        self.totals = {}
-
-    def on_batch_end(self, batch, logs={}):
-        batch_size = logs.get('size', 0)
-        self.seen += batch_size
-        for k, v in logs.items():
-            if k in self.totals:
-                self.totals[k] += v * batch_size
-            else:
-                self.totals[k] = v * batch_size
-
     def on_epoch_end(self, epoch, logs={}):
         import requests
         send = {}
         send['epoch'] = epoch
-
-        for k, v in self.totals.items():
-            send[k] = v / self.seen
         for k, v in logs.items():
             send[k] = v
 
@@ -456,64 +439,42 @@ class TensorBoard(Callback):
                             'with the TensorFlow backend.')
         self.log_dir = log_dir
         self.histogram_freq = histogram_freq
+        self.merged = None
 
     def _set_model(self, model):
         import tensorflow as tf
         import keras.backend.tensorflow_backend as KTF
 
         self.model = model
-        self.sess = KTF._get_session()
-        if self.histogram_freq:
-            mod_type = self.model.get_config()['name']
-            if mod_type == 'Sequential':
-                layers = {l.get_config()['name']: l for l in self.model.layers}
-            elif mod_type == 'Graph':
-                layers = self.model.nodes
-            else:
-                raise Exception('Unrecognized model:',
-                                self.model.get_config()['name'])
-            for l in layers:
-                cur_layer = layers[l]
-                if hasattr(cur_layer, 'W'):
-                    tf.histogram_summary('{}_W'.format(l), cur_layer.W)
-                if hasattr(cur_layer, 'b'):
-                    tf.histogram_summary('{}_b'.format(l), cur_layer.b)
-                if hasattr(cur_layer, 'get_output'):
-                    tf.histogram_summary('{}_out'.format(l),
-                                         cur_layer.get_output())
+        self.sess = KTF.get_session()
+        if self.histogram_freq and not self.merged:
+            layers = self.model.layers
+            for layer in layers:
+                if hasattr(layer, 'W'):
+                    tf.histogram_summary('{}_W'.format(layer), layer.W)
+                if hasattr(layer, 'b'):
+                    tf.histogram_summary('{}_b'.format(layer), layer.b)
+                if hasattr(layer, 'output'):
+                    tf.histogram_summary('{}_out'.format(layer),
+                                         layer.output)
         self.merged = tf.merge_all_summaries()
         self.writer = tf.train.SummaryWriter(self.log_dir,
                                              self.sess.graph_def)
-
-    def on_epoch_begin(self, epoch, logs={}):
-        self.seen = 0
-        self.totals = {}
-
-    def on_batch_end(self, batch, logs={}):
-        batch_size = logs.get('size', 0)
-        self.seen += batch_size
-        for k, v in logs.items():
-            if k in self.totals:
-                self.totals[k] += v * batch_size
-            else:
-                self.totals[k] = v * batch_size
 
     def on_epoch_end(self, epoch, logs={}):
         import tensorflow as tf
 
         if self.model.validation_data and self.histogram_freq:
             if epoch % self.histogram_freq == 0:
-                if self.params.get('show_accuracy'):
-                    test_function = self.model._test_with_acc
-                else:
-                    test_function = self.model._test
-                names = [v.name for v in test_function.inputs]
-                feed_dict = dict(zip(names, self.model.validation_data))
+                # TODO: implement batched calls to sess.run
+                # (current call will likely go OOM on GPU)
+                feed_dict = dict(zip(self.model.inputs,
+                                     self.model.validation_data))
                 result = self.sess.run([self.merged], feed_dict=feed_dict)
                 summary_str = result[0]
                 self.writer.add_summary(summary_str, epoch)
 
-        for name, value in self.totals.items() + logs.items():
+        for name, value in logs.items():
             if name in ['batch', 'size']:
                 continue
             summary = tf.Summary()

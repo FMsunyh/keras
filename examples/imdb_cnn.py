@@ -1,8 +1,6 @@
 '''This example demonstrates the use of Convolution1D for text classification.
 
-Run on GPU: THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python imdb_cnn.py
-
-Get to 0.835 test accuracy after 2 epochs. 100s/epoch on K520 GPU.
+Gets to 0.835 test accuracy after 2 epochs. 100s/epoch on K520 GPU.
 '''
 
 from __future__ import print_function
@@ -72,7 +70,8 @@ model.add(Activation('sigmoid'))
 
 model.compile(loss='binary_crossentropy',
               optimizer='rmsprop',
-              class_mode='binary')
-model.fit(X_train, y_train, batch_size=batch_size,
-          nb_epoch=nb_epoch, show_accuracy=True,
+              metrics=['accuracy'])
+model.fit(X_train, y_train,
+          batch_size=batch_size,
+          nb_epoch=nb_epoch,
           validation_data=(X_test, y_test))
