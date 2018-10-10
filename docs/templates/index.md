@@ -2,9 +2,10 @@
 
 ## You have just found Keras.
 
-Keras is a minimalist, highly modular neural networks library, written in Python and capable of running either on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
+Keras is a minimalist, highly modular neural networks library, written in Python and capable of running on top of either [TensorFlow](https://github.com/tensorflow/tensorflow) or [Theano](https://github.com/Theano/Theano). It was developed with a focus on enabling fast experimentation. Being able to go from idea to result with the least possible delay is key to doing good research.
 
 Use Keras if you need a deep learning library that:
+
 - allows for easy and fast prototyping (through total modularity, minimalism, and extensibility).
 - supports both convolutional networks and recurrent networks, as well as combinations of the two.
 - supports arbitrary connectivity schemes (including multi-input and multi-output training).
@@ -12,9 +13,7 @@ Use Keras if you need a deep learning library that:
 
 Read the documentation at [Keras.io](http://keras.io).
 
-Keras is compatible with:
-    - __Python 2.7-3.5__ with the Theano backend
-    - __Python 2.7__ with the TensorFlow backend
+Keras is compatible with: __Python 2.7-3.5__.
 
 
 ------------------
@@ -36,7 +35,7 @@ Keras is compatible with:
 
 ## Getting started: 30 seconds to Keras
 
-The core datastructure of Keras is a __model__, a way to organize layers. There are two types of models: [`Sequential`](/models/#sequential) and [`Graph`](/models/#graph).
+The core datastructure of Keras is a __model__, a way to organize layers. There are two types of models: [`Sequential`](http://keras.io/models/#sequential) and [`Graph`](http://keras.io/models/#graph).
 
 Here's the `Sequential` model (a linear pile of layers):
 
@@ -108,7 +107,8 @@ Keras uses the following dependencies:
 - HDF5 and h5py (optional, required if you use model saving/loading functions)
 - Optional but recommended if you use CNNs: cuDNN.
 
-When using the Theano backend:
+*When using the Theano backend:*
+
 - Theano
     - [See installation instructions](http://deeplearning.net/software/theano/install.html#install).
 
@@ -117,11 +117,12 @@ When using the Theano backend:
 sudo pip install git+git://github.com/Theano/Theano.git
 ```
 
-When using the TensorFlow backend:
+*When using the TensorFlow backend:*
+
 - TensorFlow
     - [See installation instructions](https://github.com/tensorflow/tensorflow#download-and-setup).
 
-To install, `cd` to the Keras folder and run the install command:
+To install Keras, `cd` to the Keras folder and run the install command:
 ```
 sudo python setup.py install
 ```
@@ -145,20 +146,7 @@ By default, Keras will use Theano as its tensor manipulation library. [Follow th
 
 You can ask questions and join the development discussion on the [Keras Google group](https://groups.google.com/forum/#!forum/keras-users).
 
-------------------
-
-
-## Contribution Guidelines
-
-Keras welcomes all contributions from the community. 
-
-- Keep a pragmatic mindset and avoid bloat. Only add to the source if that is the only path forward.
-- New features should be documented. Make sure you update the documentation along with your Pull Request.
-- Any new function or class should have a proper docstring.
-- The documentation for every new feature should include a usage example in the form of a code snippet. 
-- All changes should be tested. Make sure any new feature you add has a corresponding unit test.
-- Please no Pull Requests about coding style.
-- Even if you don't contribute to the Keras source code, if you have an application of Keras that is concise and powerful, please consider adding it to our collection of [examples](https://github.com/fchollet/keras/tree/master/examples).
+You can also post bug reports and feature requests in [Github issues](https://github.com/fchollet/keras/issues). Make sure to read [our guidelines](https://github.com/fchollet/keras/blob/master/CONTRIBUTING.md) first.
 
 
 ------------------

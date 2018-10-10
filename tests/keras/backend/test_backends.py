@@ -1,12 +1,10 @@
 import sys
-import unittest
+import pytest
 from numpy.testing import assert_allclose
 import numpy as np
-import pytest
 
-if sys.version_info.major == 2:
-    from keras.backend import theano_backend as KTH
-    from keras.backend import tensorflow_backend as KTF
+from keras.backend import theano_backend as KTH
+from keras.backend import tensorflow_backend as KTF
 
 
 def check_single_tensor_operation(function_name, input_shape, **kwargs):
@@ -38,8 +36,7 @@ def check_two_tensor_operation(function_name, x_input_shape,
     assert_allclose(zth, ztf, atol=1e-05)
 
 
-@pytest.mark.skipif(sys.version_info.major != 2, reason="Requires Python 2.7")
-class TestBackend(unittest.TestCase):
+class TestBackend(object):
 
     def test_linear_operations(self):
         check_two_tensor_operation('dot', (4, 2), (2, 4))
@@ -66,6 +63,26 @@ class TestBackend(unittest.TestCase):
         check_single_tensor_operation('expand_dims', (4, 3), dim=-1)
         check_single_tensor_operation('expand_dims', (4, 3, 2), dim=1)
         check_single_tensor_operation('squeeze', (4, 3, 1), axis=2)
+
+    def test_repeat_elements(self):
+        reps = 3
+        for ndims in [1, 2, 3]:
+            shape = np.arange(2, 2+ndims)
+            arr = np.arange(np.prod(shape)).reshape(shape)
+            arr_th = KTH.variable(arr)
+            arr_tf = KTF.variable(arr)
+
+            for rep_axis in range(ndims):
+                np_rep = np.repeat(arr, reps, axis=rep_axis)
+                th_rep = KTH.eval(
+                    KTH.repeat_elements(arr_th, reps, axis=rep_axis))
+                tf_rep = KTF.eval(
+                    KTF.repeat_elements(arr_tf, reps, axis=rep_axis))
+
+                assert th_rep.shape == np_rep.shape
+                assert tf_rep.shape == np_rep.shape
+                assert_allclose(np_rep, th_rep, atol=1e-05)
+                assert_allclose(np_rep, tf_rep, atol=1e-05)
 
     def test_value_manipulation(self):
         val = np.random.random((4, 2))
@@ -224,9 +241,9 @@ class TestBackend(unittest.TestCase):
         assert len(new_states) == 1
         tf_state = KTF.eval(new_states[0])
 
-        assert_allclose(tf_last_output, th_last_output, atol=1e-05)
-        assert_allclose(tf_outputs, th_outputs, atol=1e-05)
-        assert_allclose(tf_state, th_state, atol=1e-05)
+        assert_allclose(tf_last_output, th_last_output, atol=1e-04)
+        assert_allclose(tf_outputs, th_outputs, atol=1e-04)
+        assert_allclose(tf_state, th_state, atol=1e-04)
 
     def test_switch(self):
         val = np.random.random()
@@ -291,17 +308,17 @@ class TestBackend(unittest.TestCase):
     #     check_two_tensor_operation('conv2d', (5, 3, 10, 12), (4, 3, 3, 3),
     #                                strides=(2, 2), border_mode='valid')
 
-    # def test_maxpool2d(self):
-    #     '''maxpool2d works "properly" with Theano and TF but outputs different
+    # def test_pool2d(self):
+    #     '''pool2d works "properly" with Theano and TF but outputs different
     #     values in each case. Cause unclear (input shape format?)
     #     '''
-    #     check_single_tensor_operation('maxpool2d', (5, 3, 10, 12), pool_size=(2, 2),
+    #     check_single_tensor_operation('pool2d', (5, 3, 10, 12), pool_size=(2, 2),
     #                                   strides=(1, 1), border_mode='valid')
 
-    #     check_single_tensor_operation('maxpool2d', (5, 3, 9, 11), pool_size=(2, 2),
+    #     check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 2),
     #                                   strides=(1, 1), border_mode='valid')
 
-    #     check_single_tensor_operation('maxpool2d', (5, 3, 9, 11), pool_size=(2, 3),
+    #     check_single_tensor_operation('pool2d', (5, 3, 9, 11), pool_size=(2, 3),
     #                                   strides=(1, 1), border_mode='valid')
 
     def test_random_normal(self):
@@ -332,4 +349,4 @@ class TestBackend(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])
