@@ -50,8 +50,8 @@ class Recurrent(MaskedLayer):
                 raise Exception('When using TensorFlow, you should define ' +
                                 'explicitely the number of timesteps of ' +
                                 'your sequences. Make sure the first layer ' +
-                                'has an "input_shape" argument with a defined ' +
-                                'first dimension.')
+                                'has a "batch_input_shape" argument ' +
+                                'including the samples axis.')
 
         mask = self.get_output_mask(train)
         if mask:
@@ -123,7 +123,7 @@ class SimpleRNN(Recurrent):
                 raise Exception('If a RNN is stateful, a complete ' +
                                 'input_shape must be provided ' +
                                 '(including batch size).')
-            self.states = [K.zeros(input_shape[0], self.output_dim)]
+            self.states = [K.zeros((input_shape[0], self.output_dim))]
         else:
             # initial states: all-zero tensor of shape (output_dim)
             self.states = [None]
@@ -216,7 +216,7 @@ class GRU(Recurrent):
                 raise Exception('If a RNN is stateful, a complete ' +
                                 'input_shape must be provided ' +
                                 '(including batch size).')
-            self.states = [K.zeros(input_shape[0], self.output_dim)]
+            self.states = [K.zeros((input_shape[0], self.output_dim))]
         else:
             # initial states: all-zero tensor of shape (output_dim)
             self.states = [None]
@@ -295,8 +295,8 @@ class LSTM(Recurrent):
                 raise Exception('If a RNN is stateful, a complete ' +
                                 'input_shape must be provided ' +
                                 '(including batch size).')
-            self.states = [K.zeros(input_shape[0], self.output_dim),
-                           K.zeros(input_shape[0], self.output_dim)]
+            self.states = [K.zeros((input_shape[0], self.output_dim)),
+                           K.zeros((input_shape[0], self.output_dim))]
         else:
             # initial states: 2 all-zero tensor of shape (output_dim)
             self.states = [None, None]
